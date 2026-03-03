@@ -15,6 +15,14 @@ function PredictionForm({ match, userId, existing, onSaved }) {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
+  // Sync inputs when the existing prediction loads asynchronously
+  useEffect(() => {
+    if (existing) {
+      setHome(existing.home_score_prediction)
+      setAway(existing.away_score_prediction)
+    }
+  }, [existing?.id])
+
   async function handleSubmit(e) {
     e.preventDefault()
     setSaving(true)
@@ -193,8 +201,9 @@ export default function MatchesPage() {
   }, [])
 
   const now = new Date()
+  const in7days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
   const upcoming = matches
-    .filter(m => !m.is_completed && new Date(m.kickoff_time) > now)
+    .filter(m => !m.is_completed && new Date(m.kickoff_time) > now && new Date(m.kickoff_time) <= in7days)
     .sort((a, b) => new Date(a.kickoff_time) - new Date(b.kickoff_time))
   const past = matches
     .filter(m => m.is_completed || new Date(m.kickoff_time) <= now)
