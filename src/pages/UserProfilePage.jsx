@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { getUserById, getUserPredictions, getMatchById } from '../utils/storage.js'
+import { getUserById, getUserPredictions, getMatchById } from '../utils/db.js'
 import { describePoints } from '../utils/scoring.js'
 import { useAuth } from '../context/AuthContext.jsx'
 
@@ -9,19 +9,29 @@ export default function UserProfilePage() {
   const { user: currentUser } = useAuth()
   const [profileUser, setProfileUser] = useState(null)
   const [items, setItems] = useState([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const u = getUserById(userId)
-    setProfileUser(u)
-    if (u) {
-      const preds = getUserPredictions(userId)
-      const enriched = preds
-        .map(p => ({ prediction: p, match: getMatchById(p.match_id) }))
-        .filter(({ match }) => match && match.is_completed)
-        .sort((a, b) => new Date(b.match.kickoff_time) - new Date(a.match.kickoff_time))
-      setItems(enriched)
+    async function load() {
+      const u = await getUserById(userId)
+      setProfileUser(u)
+      if (u) {
+        const preds = await getUserPredictions(userId)
+        const enriched = (
+          await Promise.all(preds.map(async p => ({ prediction: p, match: await getMatchById(p.match_id) })))
+        )
+          .filter(({ match }) => match && match.is_completed)
+          .sort((a, b) => new Date(b.match.kickoff_time) - new Date(a.match.kickoff_time))
+        setItems(enriched)
+      }
+      setLoading(false)
     }
+    load()
   }, [userId])
+
+  if (loading) {
+    return <div className="max-w-3xl mx-auto px-4 py-8 text-center text-gray-500">Loading...</div>
+  }
 
   if (!profileUser) {
     return (

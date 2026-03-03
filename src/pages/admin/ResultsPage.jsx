@@ -4,7 +4,7 @@ import {
   saveMatch,
   getAllPredictionsForMatch,
   getUserById,
-} from '../../utils/storage.js'
+} from '../../utils/db.js'
 import { fetchAndSaveResult, recalcPointsForMatch } from '../../utils/apiFootball.js'
 
 function formatKickoff(dt) {
@@ -18,7 +18,7 @@ function ManualScoreForm({ match, onSaved }) {
   const [away, setAway] = useState(match.away_score ?? '')
   const [saving, setSaving] = useState(false)
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault()
     setSaving(true)
     const updated = {
@@ -28,8 +28,8 @@ function ManualScoreForm({ match, onSaved }) {
       is_completed: true,
       api_status: 'FT',
     }
-    saveMatch(updated)
-    recalcPointsForMatch(updated)
+    await saveMatch(updated)
+    await recalcPointsForMatch(updated)
     setSaving(false)
     onSaved(updated)
   }
@@ -92,12 +92,13 @@ function MatchRow({ match: initialMatch, onUpdate }) {
     onUpdate(updated)
   }
 
-  function togglePredictions() {
+  async function togglePredictions() {
     if (!showPredictions) {
-      setPredictions(getAllPredictionsForMatch(match.id)
-        .map(p => ({ ...p, user: getUserById(p.user_id) }))
-        .sort((a, b) => (b.points_earned || 0) - (a.points_earned || 0))
+      const preds = await getAllPredictionsForMatch(match.id)
+      const enriched = await Promise.all(
+        preds.map(async p => ({ ...p, user: await getUserById(p.user_id) }))
       )
+      setPredictions(enriched.sort((a, b) => (b.points_earned || 0) - (a.points_earned || 0)))
     }
     setShowPredictions(v => !v)
   }
@@ -189,10 +190,9 @@ export default function ResultsPage() {
   const [fetchingAll, setFetchingAll] = useState(false)
   const [tab, setTab] = useState('pending')
 
-  function reload() {
-    const now = Date.now()
-    const all = getAllMatches().sort((a, b) => new Date(a.kickoff_time) - new Date(b.kickoff_time))
-    setMatches(all)
+  async function reload() {
+    const all = await getAllMatches()
+    setMatches(all.sort((a, b) => new Date(a.kickoff_time) - new Date(b.kickoff_time)))
   }
 
   useEffect(() => { reload() }, [])
@@ -213,7 +213,7 @@ export default function ResultsPage() {
     for (const match of pending) {
       try { await fetchAndSaveResult(match) } catch { /* continue */ }
     }
-    reload()
+    await reload()
     setFetchingAll(false)
   }
 

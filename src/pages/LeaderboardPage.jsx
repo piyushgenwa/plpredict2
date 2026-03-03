@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { getLeaderboard, getAllMatches } from '../utils/storage.js'
+import { getLeaderboard, getAllMatches } from '../utils/db.js'
 import { useAuth } from '../context/AuthContext.jsx'
 
 function getMedal(rank) {
@@ -15,15 +15,21 @@ export default function LeaderboardPage() {
   const [matchday, setMatchday] = useState('')
   const [entries, setEntries] = useState([])
   const [matchdays, setMatchdays] = useState([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const matches = getAllMatches()
-    const days = [...new Set(matches.map(m => m.matchday).filter(Boolean))].sort((a, b) => a - b)
-    setMatchdays(days)
+    getAllMatches().then(matches => {
+      const days = [...new Set(matches.map(m => m.matchday).filter(Boolean))].sort((a, b) => a - b)
+      setMatchdays(days)
+    })
   }, [])
 
   useEffect(() => {
-    setEntries(getLeaderboard(matchday ? parseInt(matchday) : null))
+    setLoading(true)
+    getLeaderboard(matchday ? parseInt(matchday) : null).then(data => {
+      setEntries(data)
+      setLoading(false)
+    })
   }, [matchday])
 
   return (
@@ -42,7 +48,9 @@ export default function LeaderboardPage() {
         </select>
       </div>
 
-      {entries.length === 0 ? (
+      {loading ? (
+        <div className="text-center py-16 text-gray-500">Loading...</div>
+      ) : entries.length === 0 ? (
         <div className="text-center py-16 text-gray-500">
           <p>No data yet. Start predicting!</p>
         </div>

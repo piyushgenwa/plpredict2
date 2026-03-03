@@ -1,19 +1,25 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
-import { getUserPredictions, getMatchById } from '../utils/storage.js'
+import { getUserPredictions, getMatchById } from '../utils/db.js'
 import { describePoints } from '../utils/scoring.js'
 
 export default function PredictionsPage() {
   const { user } = useAuth()
   const [items, setItems] = useState([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const preds = getUserPredictions(user.id)
-    const enriched = preds
-      .map(p => ({ prediction: p, match: getMatchById(p.match_id) }))
-      .filter(({ match }) => match)
-      .sort((a, b) => new Date(b.match.kickoff_time) - new Date(a.match.kickoff_time))
-    setItems(enriched)
+    async function load() {
+      const preds = await getUserPredictions(user.id)
+      const enriched = (
+        await Promise.all(preds.map(async p => ({ prediction: p, match: await getMatchById(p.match_id) })))
+      )
+        .filter(({ match }) => match)
+        .sort((a, b) => new Date(b.match.kickoff_time) - new Date(a.match.kickoff_time))
+      setItems(enriched)
+      setLoading(false)
+    }
+    load()
   }, [user.id])
 
   const totalPoints = items.reduce((sum, { prediction: p }) => sum + (p.points_earned || 0), 0)
@@ -38,7 +44,9 @@ export default function PredictionsPage() {
         </div>
       </div>
 
-      {items.length === 0 ? (
+      {loading ? (
+        <div className="text-center py-16 text-gray-500">Loading...</div>
+      ) : items.length === 0 ? (
         <div className="text-center py-16 text-gray-500">
           <p>No predictions yet. Go to Matches to start predicting!</p>
         </div>

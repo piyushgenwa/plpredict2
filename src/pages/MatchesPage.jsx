@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
-import { getAllMatches, getPrediction, savePrediction } from '../utils/storage.js'
+import { getAllMatches, getPrediction, savePrediction } from '../utils/db.js'
 import { describePoints } from '../utils/scoring.js'
 
 function TeamLogo({ src, name, size = 'md' }) {
@@ -9,14 +9,13 @@ function TeamLogo({ src, name, size = 'md' }) {
   return <img src={src} alt={name} className={`${s} object-contain`} onError={e => { e.target.style.display = 'none' }} />
 }
 
-function PredictionForm({ match, userId, onSaved }) {
-  const existing = getPrediction(userId, match.id)
+function PredictionForm({ match, userId, existing, onSaved }) {
   const [home, setHome] = useState(existing?.home_score_prediction ?? '')
   const [away, setAway] = useState(existing?.away_score_prediction ?? '')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault()
     setSaving(true)
     const pred = {
@@ -28,7 +27,7 @@ function PredictionForm({ match, userId, onSaved }) {
       points_earned: existing?.points_earned ?? null,
       submitted_at: new Date().toISOString(),
     }
-    savePrediction(pred)
+    await savePrediction(pred)
     setSaved(true)
     setSaving(false)
     setTimeout(() => setSaved(false), 2000)
@@ -79,8 +78,12 @@ function PredictionForm({ match, userId, onSaved }) {
 function MatchCard({ match, userId }) {
   const now = new Date()
   const kickoff = new Date(match.kickoff_time)
-  const prediction = getPrediction(userId, match.id)
   const isPast = match.is_completed
+  const [prediction, setPrediction] = useState(null)
+
+  useEffect(() => {
+    getPrediction(userId, match.id).then(setPrediction)
+  }, [userId, match.id])
 
   const kickoffStr = kickoff.toLocaleDateString('en-GB', {
     weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
@@ -153,7 +156,7 @@ function MatchCard({ match, userId }) {
       )}
 
       {!isPast && kickoff > now && (
-        <PredictionForm match={match} userId={userId} />
+        <PredictionForm match={match} userId={userId} existing={prediction} onSaved={setPrediction} />
       )}
 
       {!isPast && kickoff <= now && prediction && (
@@ -179,9 +182,13 @@ export default function MatchesPage() {
   const { user } = useAuth()
   const [tab, setTab] = useState('upcoming')
   const [matches, setMatches] = useState([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    setMatches(getAllMatches())
+    getAllMatches().then(data => {
+      setMatches(data)
+      setLoading(false)
+    })
   }, [])
 
   const now = new Date()
@@ -217,7 +224,9 @@ export default function MatchesPage() {
         </button>
       </div>
 
-      {displayed.length === 0 ? (
+      {loading ? (
+        <div className="text-center py-16 text-gray-500">Loading matches...</div>
+      ) : displayed.length === 0 ? (
         <div className="text-center py-16 text-gray-500">
           <p className="text-lg">No {tab} matches</p>
           <p className="text-sm mt-2">
