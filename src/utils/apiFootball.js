@@ -7,7 +7,7 @@ import {
   getPrediction,
   logApiCall,
   setLastFixtureSync,
-} from './storage.js'
+} from './db.js'
 import { calculatePoints } from './scoring.js'
 
 const BASE_URL = 'https://v3.football.api-sports.io'
@@ -49,10 +49,10 @@ async function apiFetch(path, params) {
     const res = await fetch(url.toString(), { headers: getHeaders() })
     status = res.status
     body = await res.json()
-    logApiCall(path, params, status, body)
+    await logApiCall(path, params, status, body)
     return body
   } catch (err) {
-    logApiCall(path, params, status, { error: err.message })
+    await logApiCall(path, params, status, { error: err.message })
     throw err
   }
 }
@@ -93,7 +93,7 @@ export async function syncFixtures() {
         if (seen.has(apiId)) continue
         seen.add(apiId)
 
-        const existing = getMatchByApiId(apiId)
+        const existing = await getMatchByApiId(apiId)
         const matchData = {
           id: existing?.id || crypto.randomUUID(),
           api_fixture_id: apiId,
@@ -109,10 +109,9 @@ export async function syncFixtures() {
           is_completed: ['FT', 'AET', 'PEN'].includes(item.fixture.status.short),
           api_status: item.fixture.status.short,
           last_api_sync: new Date().toISOString(),
-          created_at: existing?.created_at || new Date().toISOString(),
         }
 
-        saveMatch(matchData)
+        await saveMatch(matchData)
         if (existing) updated++
         else added++
       }
@@ -121,22 +120,22 @@ export async function syncFixtures() {
     }
   }
 
-  setLastFixtureSync(new Date().toISOString())
+  await setLastFixtureSync(new Date().toISOString())
   return { added, updated, errors }
 }
 
-export function recalcPointsForMatch(match) {
+export async function recalcPointsForMatch(match) {
   if (!match.is_completed || match.home_score === null || match.away_score === null) return
 
-  const users = getAllUsers()
+  const users = await getAllUsers()
   for (const user of users) {
-    const pred = getPrediction(user.id, match.id)
+    const pred = await getPrediction(user.id, match.id)
     if (!pred) continue
     const points = calculatePoints(
       { home: pred.home_score_prediction, away: pred.away_score_prediction },
       { home: match.home_score, away: match.away_score }
     )
-    savePrediction({ ...pred, points_earned: points })
+    await savePrediction({ ...pred, points_earned: points })
   }
 }
 
@@ -160,14 +159,14 @@ export async function fetchAndSaveResult(match) {
     api_status: status,
     last_api_sync: new Date().toISOString(),
   }
-  saveMatch(updated)
-  recalcPointsForMatch(updated)
+  await saveMatch(updated)
+  await recalcPointsForMatch(updated)
   return updated
 }
 
 export async function checkPendingResults() {
   const now = Date.now()
-  const matches = getAllMatches().filter(m => {
+  const matches = (await getAllMatches()).filter(m => {
     if (m.is_completed) return false
     const kickoff = new Date(m.kickoff_time).getTime()
     return kickoff + 120 * 60 * 1000 <= now

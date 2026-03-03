@@ -1,10 +1,20 @@
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { getAllMatches, getAllUsers, getLastFixtureSync } from '../../utils/storage.js'
+import { getAllMatches, getAllUsers, getLastFixtureSync } from '../../utils/db.js'
 
 export default function AdminPage() {
-  const matches = getAllMatches()
-  const users = getAllUsers()
-  const lastSync = getLastFixtureSync()
+  const [matches, setMatches] = useState([])
+  const [users, setUsers] = useState([])
+  const [lastSync, setLastSync] = useState(null)
+
+  useEffect(() => {
+    Promise.all([getAllMatches(), getAllUsers(), getLastFixtureSync()]).then(([m, u, sync]) => {
+      setMatches(m)
+      setUsers(u)
+      setLastSync(sync)
+    })
+  }, [])
+
   const completedMatches = matches.filter(m => m.is_completed)
   const pendingResults = matches.filter(m => {
     if (m.is_completed) return false

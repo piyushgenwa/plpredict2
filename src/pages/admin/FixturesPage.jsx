@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getAllMatches, deleteMatch, saveMatch, getLastFixtureSync } from '../../utils/storage.js'
+import { getAllMatches, deleteMatch, saveMatch, getLastFixtureSync } from '../../utils/db.js'
 import { syncFixtures } from '../../utils/apiFootball.js'
 
 function formatKickoff(dt) {
@@ -15,9 +15,10 @@ export default function FixturesPage() {
   const [lastSync, setLastSync] = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
 
-  function reload() {
-    setMatches(getAllMatches().sort((a, b) => new Date(a.kickoff_time) - new Date(b.kickoff_time)))
-    setLastSync(getLastFixtureSync())
+  async function reload() {
+    const [all, sync] = await Promise.all([getAllMatches(), getLastFixtureSync()])
+    setMatches(all.sort((a, b) => new Date(a.kickoff_time) - new Date(b.kickoff_time)))
+    setLastSync(sync)
   }
 
   useEffect(() => { reload() }, [])
@@ -28,7 +29,7 @@ export default function FixturesPage() {
     try {
       const result = await syncFixtures()
       setSyncResult(result)
-      reload()
+      await reload()
     } catch (err) {
       setSyncResult({ errors: [err.message] })
     } finally {
@@ -36,10 +37,10 @@ export default function FixturesPage() {
     }
   }
 
-  function handleDelete(matchId) {
-    deleteMatch(matchId)
+  async function handleDelete(matchId) {
+    await deleteMatch(matchId)
     setDeleteConfirm(null)
-    reload()
+    await reload()
   }
 
   return (
