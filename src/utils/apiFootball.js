@@ -10,9 +10,6 @@ import {
 } from './db.js'
 import { calculatePoints } from './scoring.js'
 
-const BASE_URL = 'https://api.football-data.org/v4'
-const COMPETITION = import.meta.env.VITE_FOOTBALL_DATA_COMPETITION || 'PL'
-
 // football-data.org team IDs for tracked clubs
 export const TRACKED_TEAMS = [
   { id: 57,  name: 'Arsenal' },
@@ -25,24 +22,19 @@ export const TRACKED_TEAMS = [
 
 const TRACKED_TEAM_IDS = new Set(TRACKED_TEAMS.map(t => t.id))
 
-function getHeaders() {
-  return {
-    'X-Auth-Token': import.meta.env.VITE_FOOTBALL_DATA_KEY || '',
-  }
-}
-
 function formatDate(date) {
   return date.toISOString().split('T')[0]
 }
 
-async function apiFetch(path, params = {}) {
-  const url = new URL(`${BASE_URL}${path}`)
-  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)))
+// Calls our Vercel serverless proxy — API key never leaves the server
+async function proxyFetch(path, params = {}) {
+  const qs = new URLSearchParams(params).toString()
+  const url = qs ? `${path}?${qs}` : path
 
   let status = 0
   let body = null
   try {
-    const res = await fetch(url.toString(), { headers: getHeaders() })
+    const res = await fetch(url)
     status = res.status
     body = await res.json()
     await logApiCall(path, params, status, body)
@@ -58,8 +50,7 @@ export async function syncFixtures() {
   const in30 = new Date(today)
   in30.setDate(today.getDate() + 30)
 
-  // Single call for all PL matches — free plan allows this without team filtering
-  const data = await apiFetch(`/competitions/${COMPETITION}/matches`, {
+  const data = await proxyFetch('/api/fixtures', {
     dateFrom: formatDate(today),
     dateTo: formatDate(in30),
     status: 'SCHEDULED',
@@ -67,7 +58,7 @@ export async function syncFixtures() {
 
   const allFixtures = data?.matches || []
 
-  // Filter to only matches involving at least one tracked team
+  // Keep only matches involving at least one tracked team
   const fixtures = allFixtures.filter(
     item =>
       TRACKED_TEAM_IDS.has(item.homeTeam.id) ||
@@ -126,7 +117,7 @@ export async function recalcPointsForMatch(match) {
 }
 
 export async function fetchAndSaveResult(match) {
-  const data = await apiFetch(`/matches/${match.api_fixture_id}`)
+  const data = await proxyFetch(`/api/match/${match.api_fixture_id}`)
   if (!data || data.status !== 'FINISHED') return null
 
   const homeScore = data.score?.fullTime?.home
