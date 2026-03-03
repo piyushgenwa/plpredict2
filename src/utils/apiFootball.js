@@ -10,36 +10,20 @@ import {
 } from './db.js'
 import { calculatePoints } from './scoring.js'
 
-const BASE_URL = 'https://v3.football.api-sports.io'
-const LEAGUE_ID = import.meta.env.VITE_PREMIER_LEAGUE_ID || '39'
-const SEASON = import.meta.env.VITE_CURRENT_SEASON || '2025'
-
-export const TRACKED_TEAMS = [
-  { id: 40, name: 'Liverpool' },
-  { id: 50, name: 'Manchester City' },
-  { id: 33, name: 'Manchester United' },
-  { id: 47, name: 'Tottenham' },
-  { id: 42, name: 'Arsenal' },
-  { id: 49, name: 'Chelsea' },
-]
+const BASE_URL = 'https://api.football-data.org/v4'
+const COMPETITION = import.meta.env.VITE_FOOTBALL_DATA_COMPETITION || 'PL'
 
 function getHeaders() {
   return {
-    'x-rapidapi-key': import.meta.env.VITE_API_FOOTBALL_KEY || '',
-    'x-rapidapi-host': 'v3.football.api-sports.io',
+    'X-Auth-Token': import.meta.env.VITE_FOOTBALL_DATA_KEY || '',
   }
-}
-
-function parseMatchday(round) {
-  const m = round?.match(/\d+/)
-  return m ? parseInt(m[0]) : null
 }
 
 function formatDate(date) {
   return date.toISOString().split('T')[0]
 }
 
-async function apiFetch(path, params) {
+async function apiFetch(path, params = {}) {
   const url = new URL(`${BASE_URL}${path}`)
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)))
 
@@ -57,66 +41,47 @@ async function apiFetch(path, params) {
   }
 }
 
-export async function fetchFixtures(teamId, fromDate, toDate) {
-  return apiFetch('/fixtures', {
-    league: LEAGUE_ID,
-    season: SEASON,
-    team: teamId,
-    from: fromDate,
-    to: toDate,
-  })
-}
-
-export async function fetchResult(fixtureId) {
-  return apiFetch('/fixtures', { id: fixtureId })
-}
-
 export async function syncFixtures() {
   const today = new Date()
   const in30 = new Date(today)
   in30.setDate(today.getDate() + 30)
-  const from = formatDate(today)
-  const to = formatDate(in30)
 
-  const errors = []
+  const data = await apiFetch(`/competitions/${COMPETITION}/matches`, {
+    dateFrom: formatDate(today),
+    dateTo: formatDate(in30),
+    status: 'SCHEDULED',
+  })
+
+  const fixtures = data?.matches || []
   let added = 0
   let updated = 0
-  const seen = new Set()
+  const errors = []
 
-  for (const team of TRACKED_TEAMS) {
+  for (const item of fixtures) {
     try {
-      const data = await fetchFixtures(team.id, from, to)
-      const fixtures = data?.response || []
-
-      for (const item of fixtures) {
-        const apiId = item.fixture.id
-        if (seen.has(apiId)) continue
-        seen.add(apiId)
-
-        const existing = await getMatchByApiId(apiId)
-        const matchData = {
-          id: existing?.id || crypto.randomUUID(),
-          api_fixture_id: apiId,
-          home_team: item.teams.home.name,
-          away_team: item.teams.away.name,
-          home_team_logo: item.teams.home.logo,
-          away_team_logo: item.teams.away.logo,
-          kickoff_time: item.fixture.date,
-          matchday: parseMatchday(item.league.round),
-          round: item.league.round,
-          home_score: item.goals.home,
-          away_score: item.goals.away,
-          is_completed: ['FT', 'AET', 'PEN'].includes(item.fixture.status.short),
-          api_status: item.fixture.status.short,
-          last_api_sync: new Date().toISOString(),
-        }
-
-        await saveMatch(matchData)
-        if (existing) updated++
-        else added++
+      const apiId = item.id
+      const existing = await getMatchByApiId(apiId)
+      const matchData = {
+        id: existing?.id || crypto.randomUUID(),
+        api_fixture_id: apiId,
+        home_team: item.homeTeam.name,
+        away_team: item.awayTeam.name,
+        home_team_logo: item.homeTeam.crest || null,
+        away_team_logo: item.awayTeam.crest || null,
+        kickoff_time: item.utcDate,
+        matchday: item.matchday ?? null,
+        round: item.matchday ? `Matchday ${item.matchday}` : null,
+        home_score: item.score?.fullTime?.home ?? null,
+        away_score: item.score?.fullTime?.away ?? null,
+        is_completed: item.status === 'FINISHED',
+        api_status: item.status,
+        last_api_sync: new Date().toISOString(),
       }
+      await saveMatch(matchData)
+      if (existing) updated++
+      else added++
     } catch (err) {
-      errors.push(`Team ${team.name}: ${err.message}`)
+      errors.push(`Match ${item.id}: ${err.message}`)
     }
   }
 
@@ -140,15 +105,11 @@ export async function recalcPointsForMatch(match) {
 }
 
 export async function fetchAndSaveResult(match) {
-  const data = await fetchResult(match.api_fixture_id)
-  const fixture = data?.response?.[0]
-  if (!fixture) return null
+  const data = await apiFetch(`/matches/${match.api_fixture_id}`)
+  if (!data || data.status !== 'FINISHED') return null
 
-  const status = fixture.fixture.status.short
-  if (!['FT', 'AET', 'PEN'].includes(status)) return null
-
-  const homeScore = fixture.score.fulltime.home
-  const awayScore = fixture.score.fulltime.away
+  const homeScore = data.score?.fullTime?.home
+  const awayScore = data.score?.fullTime?.away
   if (homeScore === null || awayScore === null) return null
 
   const updated = {
@@ -156,7 +117,7 @@ export async function fetchAndSaveResult(match) {
     home_score: homeScore,
     away_score: awayScore,
     is_completed: true,
-    api_status: status,
+    api_status: data.status,
     last_api_sync: new Date().toISOString(),
   }
   await saveMatch(updated)

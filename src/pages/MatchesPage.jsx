@@ -22,6 +22,7 @@ function PredictionForm({ match, userId, existing, onSaved }) {
       id: existing?.id || crypto.randomUUID(),
       user_id: userId,
       match_id: match.id,
+      matchday: match.matchday ?? null,
       home_score_prediction: parseInt(home),
       away_score_prediction: parseInt(away),
       points_earned: existing?.points_earned ?? null,
