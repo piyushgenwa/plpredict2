@@ -1,48 +1,39 @@
-import { supabase } from './supabase.js'
+import { db } from './firebase.js'
+import {
+  collection, doc, getDoc, getDocs, setDoc, deleteDoc,
+  query, where, orderBy, addDoc,
+} from 'firebase/firestore'
 
 // ── Users / Profiles ──────────────────────────────────────────────────────────
 
 export async function saveUser(user) {
-  const { error } = await supabase
-    .from('profiles')
-    .upsert({
-      id: user.id,
-      username: user.username,
-      is_admin: user.is_admin ?? false,
-    })
-  if (error) throw error
+  await setDoc(doc(db, 'profiles', user.id), {
+    username: user.username,
+    is_admin: user.is_admin ?? false,
+    created_at: user.created_at || new Date().toISOString(),
+  }, { merge: true })
 }
 
 export async function getUserById(userId) {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
-    .single()
-  if (error) return null
-  return data
+  const snap = await getDoc(doc(db, 'profiles', userId))
+  if (!snap.exists()) return null
+  return { id: snap.id, ...snap.data() }
 }
 
-export async function getUserByEmail(email) {
-  // Email lives in auth.users only; this is used by AuthContext which now uses
-  // Supabase Auth directly. Kept as a no-op stub for compatibility.
+export async function getUserByEmail() {
+  // Handled by Firebase Auth directly — stub for compatibility
   return null
 }
 
 export async function getAllUsers() {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .order('created_at', { ascending: true })
-  if (error) throw error
-  return data || []
+  const snap = await getDocs(collection(db, 'profiles'))
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }))
 }
 
 // ── Matches ───────────────────────────────────────────────────────────────────
 
 export async function saveMatch(match) {
-  const payload = {
-    id: match.id,
+  await setDoc(doc(db, 'matches', match.id), {
     api_fixture_id: match.api_fixture_id ?? null,
     home_team: match.home_team,
     away_team: match.away_team,
@@ -56,121 +47,91 @@ export async function saveMatch(match) {
     is_completed: match.is_completed ?? false,
     api_status: match.api_status ?? 'NS',
     last_api_sync: match.last_api_sync ?? null,
-  }
-  const { error } = await supabase.from('matches').upsert(payload)
-  if (error) throw error
+    created_at: match.created_at || new Date().toISOString(),
+  })
 }
 
 export async function getMatchById(matchId) {
-  const { data, error } = await supabase
-    .from('matches')
-    .select('*')
-    .eq('id', matchId)
-    .single()
-  if (error) return null
-  return data
+  const snap = await getDoc(doc(db, 'matches', matchId))
+  if (!snap.exists()) return null
+  return { id: snap.id, ...snap.data() }
 }
 
 export async function getMatchByApiId(apiFixtureId) {
-  const { data, error } = await supabase
-    .from('matches')
-    .select('*')
-    .eq('api_fixture_id', apiFixtureId)
-    .single()
-  if (error) return null
-  return data
+  const snap = await getDocs(
+    query(collection(db, 'matches'), where('api_fixture_id', '==', apiFixtureId))
+  )
+  if (snap.empty) return null
+  const d = snap.docs[0]
+  return { id: d.id, ...d.data() }
 }
 
 export async function getAllMatches() {
-  const { data, error } = await supabase
-    .from('matches')
-    .select('*')
-    .order('kickoff_time', { ascending: true })
-  if (error) throw error
-  return data || []
+  const snap = await getDocs(
+    query(collection(db, 'matches'), orderBy('kickoff_time'))
+  )
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }))
 }
 
 export async function deleteMatch(matchId) {
-  const { error } = await supabase
-    .from('matches')
-    .delete()
-    .eq('id', matchId)
-  if (error) throw error
+  await deleteDoc(doc(db, 'matches', matchId))
 }
 
 // ── Predictions ───────────────────────────────────────────────────────────────
 
 export async function savePrediction(prediction) {
-  const payload = {
-    id: prediction.id,
+  await setDoc(doc(db, 'predictions', prediction.id), {
     user_id: prediction.user_id,
     match_id: prediction.match_id,
+    matchday: prediction.matchday ?? null,
     home_score_prediction: prediction.home_score_prediction,
     away_score_prediction: prediction.away_score_prediction,
     points_earned: prediction.points_earned ?? null,
-    submitted_at: prediction.submitted_at ?? new Date().toISOString(),
-  }
-  const { error } = await supabase.from('predictions').upsert(payload)
-  if (error) throw error
+    submitted_at: prediction.submitted_at || new Date().toISOString(),
+  })
 }
 
 export async function getPrediction(userId, matchId) {
-  const { data, error } = await supabase
-    .from('predictions')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('match_id', matchId)
-    .single()
-  if (error) return null
-  return data
+  const snap = await getDocs(
+    query(
+      collection(db, 'predictions'),
+      where('user_id', '==', userId),
+      where('match_id', '==', matchId)
+    )
+  )
+  if (snap.empty) return null
+  const d = snap.docs[0]
+  return { id: d.id, ...d.data() }
 }
 
 export async function getAllPredictionsForMatch(matchId) {
-  const { data, error } = await supabase
-    .from('predictions')
-    .select('*')
-    .eq('match_id', matchId)
-  if (error) throw error
-  return data || []
+  const snap = await getDocs(
+    query(collection(db, 'predictions'), where('match_id', '==', matchId))
+  )
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }))
 }
 
 export async function getUserPredictions(userId) {
-  const { data, error } = await supabase
-    .from('predictions')
-    .select('*')
-    .eq('user_id', userId)
-  if (error) throw error
-  return data || []
+  const snap = await getDocs(
+    query(collection(db, 'predictions'), where('user_id', '==', userId))
+  )
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }))
 }
 
 // ── Leaderboard ───────────────────────────────────────────────────────────────
 
 export async function getLeaderboard(matchday = null) {
-  // Fetch profiles and predictions (with match data for matchday filtering)
-  let predQuery = supabase
-    .from('predictions')
-    .select('user_id, points_earned, matches(matchday)')
+  const predsQuery = matchday !== null
+    ? query(collection(db, 'predictions'), where('matchday', '==', matchday))
+    : collection(db, 'predictions')
 
-  if (matchday !== null) {
-    predQuery = predQuery.eq('matches.matchday', matchday)
-  }
-
-  const [profilesRes, predsRes] = await Promise.all([
-    supabase.from('profiles').select('id, username'),
-    predQuery,
+  const [profilesSnap, predsSnap] = await Promise.all([
+    getDocs(collection(db, 'profiles')),
+    getDocs(predsQuery),
   ])
 
-  if (profilesRes.error) throw profilesRes.error
-  if (predsRes.error) throw predsRes.error
-
-  const profiles = profilesRes.data || []
-  let preds = predsRes.data || []
-
-  // When filtering by matchday, the join returns all rows but non-matching
-  // matches will have matches=null — filter those out.
-  if (matchday !== null) {
-    preds = preds.filter(p => p.matches !== null)
-  }
+  const profiles = profilesSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+  const preds = predsSnap.docs.map(d => ({ id: d.id, ...d.data() }))
 
   const byUser = {}
   for (const p of preds) {
@@ -198,32 +159,27 @@ export async function getLeaderboard(matchday = null) {
 // ── API Logs ──────────────────────────────────────────────────────────────────
 
 export async function logApiCall(endpoint, params, status, body) {
-  const { error } = await supabase.from('api_logs').insert({
-    endpoint,
-    request_params: params,
-    response_status: status,
-    response_body: body,
-  })
-  // Silently ignore log failures — don't break callers
-  if (error) console.warn('logApiCall error:', error.message)
+  try {
+    await addDoc(collection(db, 'api_logs'), {
+      endpoint,
+      request_params: params,
+      response_status: status,
+      response_body: body,
+      created_at: new Date().toISOString(),
+    })
+  } catch (err) {
+    console.warn('logApiCall error:', err.message)
+  }
 }
 
 // ── Settings (last fixture sync) ──────────────────────────────────────────────
 
 export async function getLastFixtureSync() {
-  const { data, error } = await supabase
-    .from('settings')
-    .select('value')
-    .eq('key', 'last_fixture_sync')
-    .single()
-  if (error || !data) return null
-  return data.value
+  const snap = await getDoc(doc(db, 'settings', 'last_fixture_sync'))
+  if (!snap.exists()) return null
+  return snap.data().value
 }
 
 export async function setLastFixtureSync(date) {
-  const { error } = await supabase
-    .from('settings')
-    .update({ value: date })
-    .eq('key', 'last_fixture_sync')
-  if (error) throw error
+  await setDoc(doc(db, 'settings', 'last_fixture_sync'), { value: date })
 }
