@@ -13,6 +13,18 @@ import { calculatePoints } from './scoring.js'
 const BASE_URL = 'https://api.football-data.org/v4'
 const COMPETITION = import.meta.env.VITE_FOOTBALL_DATA_COMPETITION || 'PL'
 
+// football-data.org team IDs for tracked clubs
+export const TRACKED_TEAMS = [
+  { id: 57,  name: 'Arsenal' },
+  { id: 61,  name: 'Chelsea' },
+  { id: 64,  name: 'Liverpool' },
+  { id: 65,  name: 'Manchester City' },
+  { id: 66,  name: 'Manchester United' },
+  { id: 73,  name: 'Tottenham Hotspur' },
+]
+
+const TRACKED_TEAM_IDS = new Set(TRACKED_TEAMS.map(t => t.id))
+
 function getHeaders() {
   return {
     'X-Auth-Token': import.meta.env.VITE_FOOTBALL_DATA_KEY || '',
@@ -46,13 +58,22 @@ export async function syncFixtures() {
   const in30 = new Date(today)
   in30.setDate(today.getDate() + 30)
 
+  // Single call for all PL matches — free plan allows this without team filtering
   const data = await apiFetch(`/competitions/${COMPETITION}/matches`, {
     dateFrom: formatDate(today),
     dateTo: formatDate(in30),
     status: 'SCHEDULED',
   })
 
-  const fixtures = data?.matches || []
+  const allFixtures = data?.matches || []
+
+  // Filter to only matches involving at least one tracked team
+  const fixtures = allFixtures.filter(
+    item =>
+      TRACKED_TEAM_IDS.has(item.homeTeam.id) ||
+      TRACKED_TEAM_IDS.has(item.awayTeam.id)
+  )
+
   let added = 0
   let updated = 0
   const errors = []
