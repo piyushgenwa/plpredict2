@@ -2,9 +2,8 @@ import {
   getMatchByApiId,
   saveMatch,
   getAllMatches,
-  getAllUsers,
+  getAllPredictionsForMatch,
   savePrediction,
-  getPrediction,
   logApiCall,
   setLastFixtureSync,
 } from './db.js'
@@ -104,10 +103,8 @@ export async function syncFixtures() {
 export async function recalcPointsForMatch(match) {
   if (!match.is_completed || match.home_score === null || match.away_score === null) return
 
-  const users = await getAllUsers()
-  for (const user of users) {
-    const pred = await getPrediction(user.id, match.id)
-    if (!pred) continue
+  const preds = await getAllPredictionsForMatch(match.id)
+  for (const pred of preds) {
     const points = calculatePoints(
       { home: pred.home_score_prediction, away: pred.away_score_prediction },
       { home: match.home_score, away: match.away_score }
